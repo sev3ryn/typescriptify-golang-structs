@@ -96,7 +96,7 @@ type TypeScriptify struct {
 	fieldTypeOptions map[reflect.Type]TypeOptions
 
 	// throwaway, used when converting
-	alreadyConverted map[reflect.Type]bool
+	alreadyConverted map[string]bool
 }
 
 func New() *TypeScriptify {
@@ -149,10 +149,10 @@ func deepFields(typeOf reflect.Type) []reflect.StructField {
 
 		kind := f.Type.Kind()
 		if f.Anonymous && kind == reflect.Struct {
-			//fmt.Println(v.Interface())
+			// fmt.Println(v.Interface())
 			fields = append(fields, deepFields(f.Type)...)
 		} else if f.Anonymous && kind == reflect.Ptr && f.Type.Elem().Kind() == reflect.Struct {
-			//fmt.Println(v.Interface())
+			// fmt.Println(v.Interface())
 			fields = append(fields, deepFields(f.Type.Elem())...)
 		} else {
 			fields = append(fields, f)
@@ -324,7 +324,7 @@ func (t *TypeScriptify) Convert(customCode map[string]string) (string, error) {
 		fmt.Fprintln(os.Stderr, "FromMethod METHOD IS DEPRECATED AND WILL BE REMOVED!!!!!!")
 	}
 
-	t.alreadyConverted = make(map[reflect.Type]bool)
+	t.alreadyConverted = make(map[string]bool)
 	depth := 0
 
 	result := ""
@@ -411,7 +411,7 @@ func (t TypeScriptify) backup(fileName string) error {
 		backupFn = path.Join(t.BackupDir, backupFn)
 	}
 
-	return os.WriteFile(backupFn, bytes, os.FileMode(0700))
+	return os.WriteFile(backupFn, bytes, os.FileMode(0o700))
 }
 
 func (t TypeScriptify) ConvertToFile(fileName string) error {
@@ -456,13 +456,14 @@ type TSNamer interface {
 }
 
 func (t *TypeScriptify) convertEnum(depth int, typeOf reflect.Type, elements []enumElement) (string, error) {
-	t.logf(depth, "Converting enum %s", typeOf.String())
-	if _, found := t.alreadyConverted[typeOf]; found { // Already converted
+	cleanName := strings.Split(typeOf.Name(), "[")[0]
+	t.logf(depth, "Converting enum %s", cleanName)
+	if _, found := t.alreadyConverted[cleanName]; found { // Already converted
 		return "", nil
 	}
-	t.alreadyConverted[typeOf] = true
+	t.alreadyConverted[cleanName] = true
 
-	entityName := t.Prefix + typeOf.Name() + t.Suffix
+	entityName := t.Prefix + cleanName + t.Suffix
 	result := "enum " + entityName + " {\n"
 
 	for _, val := range elements {
@@ -549,14 +550,15 @@ func (t *TypeScriptify) getJSONFieldName(field reflect.StructField, isPtr bool) 
 }
 
 func (t *TypeScriptify) convertType(depth int, typeOf reflect.Type, customCode map[string]string) (string, error) {
-	if _, found := t.alreadyConverted[typeOf]; found { // Already converted
+	cleanName := strings.Split(typeOf.Name(), "[")[0]
+	if _, found := t.alreadyConverted[cleanName]; found { // Already converted
 		return "", nil
 	}
-	t.logf(depth, "Converting type %s", typeOf.String())
+	t.logf(depth, "Converting type %s", cleanName)
 
-	t.alreadyConverted[typeOf] = true
+	t.alreadyConverted[cleanName] = true
 
-	entityName := t.Prefix + typeOf.Name() + t.Suffix
+	entityName := t.Prefix + cleanName + t.Suffix
 	result := ""
 	if t.CreateInterface {
 		result += fmt.Sprintf("interface %s {\n", entityName)
@@ -647,7 +649,7 @@ func (t *TypeScriptify) convertType(depth int, typeOf reflect.Type, customCode m
 
 			builder.AddMapField(jsonFieldName, field)
 		} else if field.Type.Kind() == reflect.Slice || field.Type.Kind() == reflect.Array { // Slice:
-			if field.Type.Elem().Kind() == reflect.Ptr { //extract ptr type
+			if field.Type.Elem().Kind() == reflect.Ptr { // extract ptr type
 				field.Type = field.Type.Elem()
 			}
 
@@ -787,7 +789,7 @@ func (t *typeScriptClassBuilder) AddEnumField(fieldName string, field reflect.St
 }
 
 func (t *typeScriptClassBuilder) AddStructField(fieldName string, field reflect.StructField) {
-	fieldType := field.Type.Name()
+	fieldType := strings.Split(field.Type.Name(), "[")[0]
 	strippedFieldName := strings.ReplaceAll(fieldName, "?", "")
 	t.addField(fieldName, t.prefix+fieldType+t.suffix)
 	t.addInitializerFieldLine(strippedFieldName, fmt.Sprintf("this.convertValues(source[\"%s\"], %s)", strippedFieldName, t.prefix+fieldType+t.suffix))
